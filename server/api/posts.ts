@@ -1,62 +1,47 @@
-import { connectToDatabase } from '../utils/mongodb';
-import { CollectionInfo, Collection } from 'mongodb';
+import { getConnection, initDatabase } from '../utils/mysql';
 
 interface Post {
+  id: number;
   title: string;
   content: string;
   author: string;
-  createdAt: Date;
-  _id?: any;
-}
-
-const MAX_RETRIES = 3;
-const RETRY_DELAY = 1000; // 1 second
-
-async function retryOperation<T>(operation: () => Promise<T>, retries = MAX_RETRIES): Promise<T> {
-  try {
-    return await operation();
-  } catch (error) {
-    if (retries > 0) {
-      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
-      return retryOperation(operation, retries - 1);
-    }
-    throw error;
-  }
+  created_at: Date;
 }
 
 export default defineEventHandler(async (event) => {
   try {
-    const { db } = await connectToDatabase();
+    console.log('Fetching posts...');
     
-    const posts = await retryOperation(async () => {
-      // Create collection if it doesn't exist
-      const collections = await db.listCollections().toArray();
-      const collectionExists = collections.some((col: CollectionInfo) => col.name === 'posts');
-      if (!collectionExists) {
-        await db.createCollection('posts');
-      }
+    // Initialize database if needed
+    await initDatabase();
+    
+    const connection = await getConnection();
+    try {
+      const [rows] = await connection.execute(
+        'SELECT * FROM posts ORDER BY created_at DESC'
+      );
       
-      const postsCollection: Collection<Post> = db.collection('posts');
-      return await postsCollection
-        .find()
-        .sort({ createdAt: -1 })
-        .toArray();
-    });
-    
-    return { 
-      success: true,
-      posts: posts.map((post: Post) => ({
-        ...post,
-        createdAt: post.createdAt.toISOString()
-      }))
-    };
+      const posts = rows as Post[];
+      console.log(`Found ${posts.length} posts`);
+      
+      return { 
+        success: true,
+        posts: posts.map(post => ({
+          ...post,
+          created_at: post.created_at.toISOString()
+        }))
+      };
+    } finally {
+      connection.release();
+    }
   } catch (error) {
-    console.error('Error fetching posts:', error);
+    console.error('Error in posts endpoint:', error);
     return { 
       success: false, 
       error: 'Failed to fetch posts',
       posts: [],
-      message: error instanceof Error ? error.message : 'Unknown error occurred'
+      message: error instanceof Error ? error.message : 'Unknown error occurred',
+      details: error
     };
   }
 }); 

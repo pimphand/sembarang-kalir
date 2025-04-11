@@ -1,12 +1,9 @@
-import { connectToDatabase } from '../utils/mongodb';
-import { CollectionInfo, Collection } from 'mongodb';
+import { getConnection, initDatabase } from '../utils/mysql';
 
 interface Post {
   title: string;
   content: string;
   author: string;
-  createdAt: Date;
-  _id?: any;
 }
 
 export default defineEventHandler(async (event) => {
@@ -21,37 +18,32 @@ export default defineEventHandler(async (event) => {
       };
     }
 
-    const { db } = await connectToDatabase();
+    // Initialize database if needed
+    await initDatabase();
     
-    // Create collection if it doesn't exist
-    const collections = await db.listCollections().toArray();
-    const collectionExists = collections.some((col: CollectionInfo) => col.name === 'posts');
-    if (!collectionExists) {
-      await db.createCollection('posts');
-    }
-    
-    const newPost: Post = {
-      title: post.title,
-      content: post.content,
-      author: post.author,
-      createdAt: new Date()
-    };
-    
-    const postsCollection: Collection<Post> = db.collection('posts');
-    const result = await postsCollection.insertOne(newPost);
+    const connection = await getConnection();
+    try {
+      const [result] = await connection.execute(
+        'INSERT INTO posts (title, content, author) VALUES (?, ?, ?)',
+        [post.title, post.content, post.author]
+      );
 
-    if (!result.acknowledged) {
-      throw new Error('Failed to save post');
-    }
-
-    return { 
-      success: true,
-      post: {
-        ...newPost,
-        _id: result.insertedId,
-        createdAt: newPost.createdAt.toISOString()
+      const insertResult = result as any;
+      if (!insertResult.affectedRows) {
+        throw new Error('Failed to save post');
       }
-    };
+
+      return { 
+        success: true,
+        post: {
+          id: insertResult.insertId,
+          ...post,
+          created_at: new Date().toISOString()
+        }
+      };
+    } finally {
+      connection.release();
+    }
   } catch (error) {
     console.error('Error saving post:', error);
     return { 

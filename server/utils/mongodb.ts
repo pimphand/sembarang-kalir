@@ -10,13 +10,22 @@ let cachedDb: any = null;
 
 export async function connectToDatabase() {
   if (cachedClient && cachedDb) {
-    return { client: cachedClient, db: cachedDb };
+    try {
+      // Test the connection
+      await cachedClient.db().admin().ping();
+      return { client: cachedClient, db: cachedDb };
+    } catch (error) {
+      console.log('Cached connection failed, creating new connection...');
+      cachedClient = null;
+      cachedDb = null;
+    }
   }
 
+  console.log('Creating new MongoDB connection...');
   const client = new MongoClient(uri, {
-    connectTimeoutMS: 10000,
+    connectTimeoutMS: 30000,
     socketTimeoutMS: 45000,
-    serverSelectionTimeoutMS: 10000,
+    serverSelectionTimeoutMS: 30000,
     retryWrites: true,
     retryReads: true,
     maxPoolSize: 10,
@@ -28,8 +37,12 @@ export async function connectToDatabase() {
   });
 
   try {
+    console.log('Attempting to connect to MongoDB...');
     await client.connect();
+    console.log('Successfully connected to MongoDB');
+    
     const db = client.db('blog');
+    console.log('Database selected:', db.databaseName);
     
     cachedClient = client;
     cachedDb = db;
@@ -37,6 +50,9 @@ export async function connectToDatabase() {
     return { client, db };
   } catch (error) {
     console.error('MongoDB connection error:', error);
+    if (client) {
+      await client.close();
+    }
     throw error;
   }
 } 
