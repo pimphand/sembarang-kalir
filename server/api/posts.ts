@@ -1,4 +1,4 @@
-import { getConnection, initDatabase } from '../utils/mysql';
+import { getConnection } from '~/server/utils/mysql';
 
 interface Post {
   id: number;
@@ -9,39 +9,41 @@ interface Post {
 }
 
 export default defineEventHandler(async (event) => {
+  let connection;
   try {
     console.log('Fetching posts...');
     
-    // Initialize database if needed
-    await initDatabase();
+    connection = await getConnection();
     
-    const connection = await getConnection();
-    try {
-      const [rows] = await connection.execute(
-        'SELECT * FROM posts ORDER BY created_at DESC'
-      );
-      
-      const posts = rows as Post[];
-      console.log(`Found ${posts.length} posts`);
-      
-      return { 
-        success: true,
-        posts: posts.map(post => ({
-          ...post,
-          created_at: post.created_at.toISOString()
-        }))
-      };
-    } finally {
+    const [rows] = await connection.execute(
+      'SELECT * FROM posts ORDER BY created_at DESC'
+    );
+    
+    const posts = rows as Post[];
+    console.log(`Found ${posts.length} posts`);
+    
+    return {
+      success: true,
+      data: posts.map(post => ({
+        ...post,
+        created_at: post.created_at.toISOString()
+      }))
+    };
+  } catch (error: any) {
+    console.error('Error fetching posts:', {
+      code: error.code,
+      errno: error.errno,
+      sqlState: error.sqlState,
+      sqlMessage: error.sqlMessage
+    });
+    
+    throw createError({
+      statusCode: 500,
+      message: `Failed to fetch posts: ${error.sqlMessage || error.message}`
+    });
+  } finally {
+    if (connection) {
       connection.release();
     }
-  } catch (error) {
-    console.error('Error in posts endpoint:', error);
-    return { 
-      success: false, 
-      error: 'Failed to fetch posts',
-      posts: [],
-      message: error instanceof Error ? error.message : 'Unknown error occurred',
-      details: error
-    };
   }
 }); 

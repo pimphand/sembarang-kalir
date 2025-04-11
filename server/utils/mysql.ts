@@ -1,22 +1,35 @@
 import mysql from 'mysql2/promise';
 
+if (!process.env.MYSQL_USER || !process.env.MYSQL_PASSWORD) {
+  throw new Error('MySQL credentials are not properly configured in environment variables');
+}
+
 const pool = mysql.createPool({
   host: process.env.MYSQL_HOST || 'localhost',
-  user: process.env.MYSQL_USER || 'root',
-  password: process.env.MYSQL_PASSWORD || '',
+  user: process.env.MYSQL_USER,
+  password: process.env.MYSQL_PASSWORD,
   database: process.env.MYSQL_DATABASE || 'blog',
   waitForConnections: true,
   connectionLimit: 10,
-  queueLimit: 0
+  queueLimit: 0,
+  connectTimeout: 10000,
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 0
 });
 
 export async function getConnection() {
   try {
     const connection = await pool.getConnection();
+    console.log('Successfully connected to MySQL');
     return connection;
-  } catch (error) {
-    console.error('MySQL connection error:', error);
-    throw error;
+  } catch (error: any) {
+    console.error('MySQL connection error:', {
+      code: error.code,
+      errno: error.errno,
+      sqlState: error.sqlState,
+      sqlMessage: error.sqlMessage
+    });
+    throw new Error(`Database connection failed: ${error.sqlMessage}`);
   }
 }
 
@@ -59,9 +72,14 @@ export async function initDatabase() {
     }
 
     console.log('Database initialized successfully');
-  } catch (error) {
-    console.error('Error initializing database:', error);
-    throw error;
+  } catch (error: any) {
+    console.error('Error initializing database:', {
+      code: error.code,
+      errno: error.errno,
+      sqlState: error.sqlState,
+      sqlMessage: error.sqlMessage
+    });
+    throw new Error(`Database initialization failed: ${error.sqlMessage}`);
   } finally {
     connection.release();
   }
